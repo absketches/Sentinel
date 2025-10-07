@@ -18,6 +18,7 @@ import org.ab.sentinel.jooq.tables.records.AppsRecord;
 import org.ab.sentinel.jooq.tables.records.IntegrationsRecord;
 import org.ab.sentinel.jooq.tables.records.UsersRecord;
 import org.jooq.DSLContext;
+import org.jooq.exception.DataAccessException;
 import org.jooq.impl.DSL;
 import org.nanonative.nano.core.model.Service;
 import org.nanonative.nano.helper.event.model.Event;
@@ -66,7 +67,7 @@ public final class PostgreSqlService extends Service {
 
     @Override
     public void onEvent(final Event<?, ?> event) {
-        event.channel(AppEvents.ADD_USER).ifPresent(ev -> ev.respond(saveUser(ev.payload())));
+        event.channel(AppEvents.ADD_USER).ifPresent(this::saveUser);
         event.channel(AppEvents.FETCH_USER).ifPresent(ev -> ev.respond(fetchUser(ev.payload())));
         event.channel(AppEvents.FETCH_APPS).ifPresent(ev -> ev.respond(getApps()));
         event.channel(AppEvents.APP_INT_REQ).ifPresent(ev -> ev.respond(saveNewUserIntegration(ev.payload())));
@@ -92,15 +93,24 @@ public final class PostgreSqlService extends Service {
         return user;
     }
 
-    private UsersRecord saveUser(final UserDto user) {
-        final UsersRecord userRecord = dsl.transactionResult(configuration -> {
-            DSLContext ctx = DSL.using(configuration);
-            if (ctx.fetchExists(ctx.selectOne().from(USERS).where(USERS.EMAIL.eq(user.email())))) {
-                return null;
-            }
-            return ctx.insertInto(USERS).set(USERS.EMAIL, user.email()).set(USERS.NAME, user.name()).set(USERS.PASSWORD_HASH, user.passwordHash()).returning(USERS.ID).fetchOne();
-        });
-        return userRecord;
+    private void saveUser(final Event<UserDto, UsersRecord> event) {
+        final UserDto user = event.payload();
+        try {
+            dsl.transactionResult(configuration -> {
+                DSLContext ctx = DSL.using(configuration);
+                if (ctx.fetchExists(ctx.selectOne().from(USERS).where(USERS.EMAIL.eq(user.email())))) {
+                    event.error(new RuntimeException("Email already registered"));
+                    return null;
+                } else {
+                    UsersRecord ur = ctx.insertInto(USERS).set(USERS.EMAIL, user.email()).set(USERS.NAME, user.name()).set(USERS.PASSWORD_HASH, user.passwordHash()).returning(USERS.ID).fetchOne();
+                    event.respond(ur);
+                    return ur;
+                }
+            });
+        } catch (DataAccessException dae) {
+            context.error(() -> "saveUser::jOOQ exception: {}", dae);
+            event.error(dae);
+        }
     }
 
     @Override

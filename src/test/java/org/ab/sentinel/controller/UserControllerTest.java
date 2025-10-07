@@ -38,16 +38,14 @@ class UserControllerTest {
     void registerUser() {
         final Nano nano = new Nano(Map.of("app_profiles", "dev"), new HttpServer(), new PostgreSqlService(), new GithubIntegrationService(), new HttpClient());
 
-        Context ctx = NanoUtils.readProfiles(nano.context(UserControllerTest.class));
-        ctx.newEvent(EVENT_CONFIG_CHANGE, () -> Map.of(
+        nano.context().newEvent(EVENT_CONFIG_CHANGE, () -> Map.of(
             CONFIG_DB_HOST, dbProp.dbHost(),
             CONFIG_DB_PORT, dbProp.dbPort(),
             // TODO: Remove the below line as password is already mentioned in dev properties file and this is a work around
             CONFIG_DB_PASS, dbProp.dbPass()
         )).broadcast(true).send();
 
-        ctx
-            .subscribeEvent(EVENT_HTTP_REQUEST, UserController::registerUser);
+        nano.subscribeEvent(EVENT_HTTP_REQUEST, UserController::registerUser);
 
         final HttpObject result = new HttpObject()
             .methodType(HttpMethod.POST)
