@@ -1,53 +1,48 @@
 package org.ab.sentinel.service;
 
 import berlin.yuna.typemap.model.TypeMapI;
-import org.ab.sentinel.AppEvents;
-
-import static org.ab.sentinel.jooq.Tables.APPS;
-import static org.ab.sentinel.jooq.Tables.INTEGRATIONS;
-import static org.ab.sentinel.jooq.tables.Users.USERS;
-import static org.nanonative.nano.helper.config.ConfigRegister.registerConfig;
-
 import org.ab.sentinel.db.DataSourceConfig;
 import org.ab.sentinel.db.DataSourceFactory;
+import org.ab.sentinel.db.JooqDao;
 import org.ab.sentinel.db.JooqFactory;
-import org.ab.sentinel.dto.AppDto;
-import org.ab.sentinel.dto.UserDto;
-import org.ab.sentinel.dto.integrations.AppIntegrationRequestDto;
-import org.ab.sentinel.jooq.tables.records.AppsRecord;
-import org.ab.sentinel.jooq.tables.records.IntegrationsRecord;
-import org.ab.sentinel.jooq.tables.records.UsersRecord;
+import org.ab.sentinel.DbEvents;
+import org.ab.sentinel.db.api.DeleteByCondition;
+import org.ab.sentinel.db.api.FetchMap;
+import org.ab.sentinel.db.api.FetchOneByCondition;
+import org.ab.sentinel.db.api.InsertAndReturn;
+import org.ab.sentinel.db.api.UpdateById;
 import org.jooq.DSLContext;
-import org.jooq.exception.DataAccessException;
-import org.jooq.impl.DSL;
+import org.jooq.TableField;
+import org.jooq.Table;
+import org.jooq.Record;
 import org.nanonative.nano.core.model.Service;
 import org.nanonative.nano.helper.event.model.Event;
 
 import javax.sql.DataSource;
-import java.nio.charset.StandardCharsets;
-import java.time.ZoneOffset;
-import java.util.Map;
-import java.util.LinkedHashMap;
-import java.util.stream.Collectors;
 
+import static org.nanonative.nano.helper.config.ConfigRegister.registerConfig;
 
 public final class PostgreSqlService extends Service {
 
+    // Config keys
     public static final String CONFIG_DB_USER = registerConfig("pg_db_user", "Database user");
     public static final String CONFIG_DB_PASS = registerConfig("pg_db_pass", "Database password");
     public static final String CONFIG_DB_NAME = registerConfig("pg_db_name", "Database name");
     public static final String CONFIG_DB_HOST = registerConfig("pg_db_host", "Database host");
     public static final String CONFIG_DB_PORT = registerConfig("pg_db_port", "Database port");
     public static final String CONFIG_DB_OPTIONS = registerConfig("pg_db_opts", "Database options");
+
     private String dbHost;
     private Integer dbPort;
     private String dbName;
     private String dbUser;
     private String dbPass;
     private String dbOpts;
+
     private DataSource ds;
     private DataSourceConfig dsConfig;
     private DSLContext dsl;
+    private JooqDao dao;
 
     @Override
     public void start() {
@@ -56,70 +51,40 @@ public final class PostgreSqlService extends Service {
     }
 
     @Override
-    public void stop() {
-
-    }
-
-    @Override
-    public Object onFailure(final Event event) {
-        return null;
-    }
-
-    @Override
+    @SuppressWarnings("unchecked")
     public void onEvent(final Event<?, ?> event) {
-        event.channel(AppEvents.ADD_USER).ifPresent(this::saveUser);
-        event.channel(AppEvents.FETCH_USER).ifPresent(ev -> ev.respond(fetchUser(ev.payload())));
-        event.channel(AppEvents.FETCH_APPS).ifPresent(ev -> ev.respond(getApps()));
-        event.channel(AppEvents.APP_INT_REQ).ifPresent(ev -> ev.respond(saveNewUserIntegration(ev.payload())));
+        event.channel(DbEvents.FETCH_ONE).ifPresent(ev -> {
+            FetchOneByCondition p = ev.payload();
+            ev.respond((Record) dao.getOne((Table) p.table(), p.condition()).orElse(null));
+        });
+
+        event.channel(DbEvents.INSERT_RETURNING).ifPresent(ev -> {
+            InsertAndReturn p = ev.payload();
+            ev.respond(dao.insertReturning((Table) p.table(), p.values()));
+        });
+
+        event.channel(DbEvents.UPDATE_BY_ID_RETURNING).ifPresent(ev -> {
+            UpdateById p = ev.payload();
+            ev.respond((Record) dao.updateByIdReturning((Table) p.table(), (TableField) p.idField(), p.id(), p.values())
+                    .orElse(null));
+        });
+
+        event.channel(DbEvents.DELETE_WHERE).ifPresent(ev -> {
+            DeleteByCondition p = ev.payload();
+            ev.respond(dao.deleteWhere((Table) p.table(), p.condition()));
+        });
+
+        event.channel(DbEvents.FETCH_MAP).ifPresent(ev -> {
+            FetchMap payload = ev.payload();
+            ev.respond(dao.fetchMap((Table) payload.table(), payload.keyField()));
+        });
     }
 
-    private Map<String, AppDto> getApps() {
-        final Map<String, AppsRecord> apps = dsl.selectFrom(APPS).fetchMap(APPS.NAME);
-        return apps.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> {
-                var r = e.getValue();
-                var meta = (r.getMetadata() == null) ? null : r.getMetadata().data();
-                return new AppDto(r.getId(), r.getName(), r.getLogoUrl(), meta);
-            }, (a, b) -> a, // shouldn't hit since names are unique
-            LinkedHashMap::new));
-    }
-
-    private IntegrationsRecord saveNewUserIntegration(AppIntegrationRequestDto req) {
-        final IntegrationsRecord res = dsl.insertInto(INTEGRATIONS).set(INTEGRATIONS.APP_ID, req.appId()).set(INTEGRATIONS.USER_ID, req.userId()).set(INTEGRATIONS.SCOPES, req.scopes().split(",")).set(INTEGRATIONS.ACCESS_TOKEN_ENC, req.accessToken().getBytes(StandardCharsets.UTF_8)).set(INTEGRATIONS.EXPIRES_AT, req.expiresAt().atOffset(ZoneOffset.UTC)).returning(INTEGRATIONS.USER_ID, INTEGRATIONS.APP_ID).fetchOne();
-        return res;
-    }
-
-    private UsersRecord fetchUser(final String email) {
-        final UsersRecord user = dsl.selectFrom(USERS).where(USERS.EMAIL.eq(email)).fetchOne();
-        return user;
-    }
-
-    private void saveUser(final Event<UserDto, UsersRecord> event) {
-        final UserDto user = event.payload();
-        try {
-            dsl.transactionResult(configuration -> {
-                DSLContext ctx = DSL.using(configuration);
-                if (ctx.fetchExists(ctx.selectOne().from(USERS).where(USERS.EMAIL.eq(user.email())))) {
-                    event.error(new RuntimeException("Email already registered"));
-                    return null;
-                } else {
-                    UsersRecord ur = ctx.insertInto(USERS).set(USERS.EMAIL, user.email()).set(USERS.NAME, user.name()).set(USERS.PASSWORD_HASH, user.passwordHash()).returning(USERS.ID).fetchOne();
-                    event.respond(ur);
-                    return ur;
-                }
-            });
-        } catch (DataAccessException dae) {
-            context.error(() -> "saveUser::jOOQ exception: {}", dae);
-            event.error(dae);
-        }
-    }
 
     @Override
     public void configure(final TypeMapI<?> changes, final TypeMapI<?> merged) {
         this.dbName = changes.asStringOpt(CONFIG_DB_NAME).orElse(merged.asString(CONFIG_DB_NAME));
         this.dbUser = changes.asStringOpt(CONFIG_DB_USER).orElse(merged.asString(CONFIG_DB_USER));
-
-        // On the config change event, this merged has values from application.properties and not application-<profile>.properties
-        // even after doing NanoUtils.readProfiles() and using the context returned.
         this.dbPass = changes.asStringOpt(CONFIG_DB_PASS).orElse(merged.asString(CONFIG_DB_PASS));
         this.dbPort = changes.asIntOpt(CONFIG_DB_PORT).orElse(merged.asInt(CONFIG_DB_PORT));
         this.dbHost = changes.asStringOpt(CONFIG_DB_HOST).orElse(merged.asString(CONFIG_DB_HOST));
@@ -129,11 +94,21 @@ public final class PostgreSqlService extends Service {
         }
     }
 
+    @Override
+    public void stop() {
+    }
+
+    @Override
+    public Object onFailure(final Event event) {
+        return null;
+    }
+
     private void createOrUpdateDs(String host, Integer port, String name, String user, String pass, String options) {
         DataSourceConfig newConfig = new DataSourceConfig(host, port, name, user, pass, options);
-        if (null == this.dsConfig || !this.dsConfig.equals(newConfig)) {
+        if (this.dsConfig == null || !this.dsConfig.equals(newConfig)) {
             this.ds = DataSourceFactory.create(newConfig);
             this.dsl = JooqFactory.create(ds);
+            this.dao = new JooqDao(this.dsl);
             this.dsConfig = newConfig;
         }
     }

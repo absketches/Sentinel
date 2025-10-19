@@ -66,7 +66,7 @@ public class UserController {
                     final String token = JwtHelper.createToken(Map.of("sub", user.getId(), "email", email), TOKEN_TTL);
                     event.respond(jsonOk(event, Map.of("token", token)));
 
-                }, () -> event.respond(problem(event, 422, "Email already registered")));
+                }, () -> event.error(new RuntimeException("ADD_USER failed")));
             });
     }
 }

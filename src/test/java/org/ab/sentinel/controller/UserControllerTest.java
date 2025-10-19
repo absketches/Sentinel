@@ -2,13 +2,12 @@ package org.ab.sentinel.controller;
 
 import org.ab.sentinel.PostgresContainer.SharedPostgresIT;
 import org.ab.sentinel.model.Postgres;
+import org.ab.sentinel.service.AppService;
 import org.ab.sentinel.service.PostgreSqlService;
 import org.ab.sentinel.service.integrations.GithubIntegrationService;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.nanonative.nano.core.Nano;
-import org.nanonative.nano.core.model.Context;
-import org.nanonative.nano.helper.NanoUtils;
 import org.nanonative.nano.services.http.HttpClient;
 import org.nanonative.nano.services.http.HttpServer;
 import org.nanonative.nano.services.http.model.HttpMethod;
@@ -36,7 +35,7 @@ class UserControllerTest {
 
     @Test
     void registerUser() {
-        final Nano nano = new Nano(Map.of("app_profiles", "dev"), new HttpServer(), new PostgreSqlService(), new GithubIntegrationService(), new HttpClient());
+        final Nano nano = new Nano(Map.of("app_profiles", "dev"), new HttpServer(), new PostgreSqlService(), new GithubIntegrationService(), new HttpClient(), new AppService());
 
         nano.context().newEvent(EVENT_CONFIG_CHANGE, () -> Map.of(
             CONFIG_DB_HOST, dbProp.dbHost(),
@@ -49,7 +48,7 @@ class UserControllerTest {
 
         final HttpObject result = new HttpObject()
             .methodType(HttpMethod.POST)
-            .body(Map.of("email", "aa@berlin.iosk", "password", "abc","name","aj"))
+            .body(Map.of("email", "aa@berlin.iosk", "password", "abc", "name", "aj"))
             .path(serverUrl + nano.service(HttpServer.class).port() + "/auth/register")
             .send(nano.context(UserControllerTest.class));
 
@@ -60,7 +59,7 @@ class UserControllerTest {
 
     @Test
     void getApps() {
-        final Nano nano = new Nano(Map.of("app_profiles", "dev"), new HttpServer(), new PostgreSqlService(), new GithubIntegrationService(), new HttpClient());
+        final Nano nano = new Nano(Map.of("app_profiles", "dev"), new HttpServer(), new PostgreSqlService(), new GithubIntegrationService(), new HttpClient(), new AppService());
 
         nano.context(UserControllerTest.class).newEvent(EVENT_CONFIG_CHANGE, () -> Map.of(
             CONFIG_DB_HOST, dbProp.dbHost(),
