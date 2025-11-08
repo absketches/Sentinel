@@ -2,13 +2,12 @@ package org.ab.sentinel.controller;
 
 import org.ab.sentinel.PostgresContainer.SharedPostgresIT;
 import org.ab.sentinel.model.Postgres;
+import org.ab.sentinel.service.AppService;
 import org.ab.sentinel.service.PostgreSqlService;
 import org.ab.sentinel.service.integrations.GithubIntegrationService;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.nanonative.nano.core.Nano;
-import org.nanonative.nano.core.model.Context;
-import org.nanonative.nano.helper.NanoUtils;
 import org.nanonative.nano.services.http.HttpClient;
 import org.nanonative.nano.services.http.HttpServer;
 import org.nanonative.nano.services.http.model.HttpMethod;
@@ -16,11 +15,7 @@ import org.nanonative.nano.services.http.model.HttpObject;
 
 import java.util.Map;
 
-import static org.ab.sentinel.service.PostgreSqlService.CONFIG_DB_HOST;
-import static org.ab.sentinel.service.PostgreSqlService.CONFIG_DB_PASS;
-import static org.ab.sentinel.service.PostgreSqlService.CONFIG_DB_PORT;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.nanonative.nano.core.model.Context.EVENT_CONFIG_CHANGE;
 import static org.nanonative.nano.services.http.HttpServer.EVENT_HTTP_REQUEST;
 
 class UserControllerTest {
@@ -36,22 +31,13 @@ class UserControllerTest {
 
     @Test
     void registerUser() {
-        final Nano nano = new Nano(Map.of("app_profiles", "dev"), new HttpServer(), new PostgreSqlService(), new GithubIntegrationService(), new HttpClient());
+        final Nano nano = new Nano(Map.of("app_profiles", "dev", "pg_db_port", dbProp.dbPort()), new HttpServer(), new PostgreSqlService(), new GithubIntegrationService(), new HttpClient(), new AppService());
 
-        Context ctx = NanoUtils.readProfiles(nano.context(UserControllerTest.class));
-        ctx.newEvent(EVENT_CONFIG_CHANGE, () -> Map.of(
-            CONFIG_DB_HOST, dbProp.dbHost(),
-            CONFIG_DB_PORT, dbProp.dbPort(),
-            // TODO: Remove the below line as password is already mentioned in dev properties file and this is a work around
-            CONFIG_DB_PASS, dbProp.dbPass()
-        )).broadcast(true).send();
-
-        ctx
-            .subscribeEvent(EVENT_HTTP_REQUEST, UserController::registerUser);
+        nano.subscribeEvent(EVENT_HTTP_REQUEST, UserController::registerUser);
 
         final HttpObject result = new HttpObject()
             .methodType(HttpMethod.POST)
-            .body(Map.of("email", "aa@berlin.iosk", "password", "abc","name","aj"))
+            .body(Map.of("email", "aa@berlin.iosk", "password", "abc", "name", "aj"))
             .path(serverUrl + nano.service(HttpServer.class).port() + "/auth/register")
             .send(nano.context(UserControllerTest.class));
 
@@ -62,15 +48,9 @@ class UserControllerTest {
 
     @Test
     void getApps() {
-        final Nano nano = new Nano(Map.of("app_profiles", "dev"), new HttpServer(), new PostgreSqlService(), new GithubIntegrationService(), new HttpClient());
+        final Nano nano = new Nano(Map.of("app_profiles", "dev", "pg_db_port", dbProp.dbPort()), new HttpServer(), new PostgreSqlService(), new GithubIntegrationService(), new HttpClient(), new AppService());
 
-        nano.context(UserControllerTest.class).newEvent(EVENT_CONFIG_CHANGE, () -> Map.of(
-            CONFIG_DB_HOST, dbProp.dbHost(),
-            CONFIG_DB_PORT, dbProp.dbPort()
-        )).send();
-
-        nano.context(AppController.class)
-            .subscribeEvent(EVENT_HTTP_REQUEST, AppController::getApps);
+        nano.subscribeEvent(EVENT_HTTP_REQUEST, AppController::getApps);
 
         final HttpObject result = new HttpObject()
             .methodType(HttpMethod.GET)

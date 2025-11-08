@@ -56,7 +56,7 @@ public class AppController {
 
                 switch (appId) {
                     case 1 -> handleGithubIntegration(event, body, userId, appId);
-                    default -> event.respond(problem(event, 404, "App not available"));
+                    default -> event.error(new RuntimeException("App not available"));
                 }
             });
     }
@@ -83,6 +83,6 @@ public class AppController {
                 } else {
                     event.respond(jsonOk(event, Map.of("integration", "success")));
                 }
-            }, () -> event.respond(problem(event, 502, "GitHub token validation unavailable")));
+            }, () -> event.error(new RuntimeException("GitHub token validation unavailable")));
     }
 }
