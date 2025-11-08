@@ -83,15 +83,12 @@ public final class PostgreSqlService extends Service {
 
     @Override
     public void configure(final TypeMapI<?> changes, final TypeMapI<?> merged) {
-        this.dbName = changes.asStringOpt(CONFIG_DB_NAME).orElse(merged.asString(CONFIG_DB_NAME));
-        this.dbUser = changes.asStringOpt(CONFIG_DB_USER).orElse(merged.asString(CONFIG_DB_USER));
-        this.dbPass = changes.asStringOpt(CONFIG_DB_PASS).orElse(merged.asString(CONFIG_DB_PASS));
-        this.dbPort = changes.asIntOpt(CONFIG_DB_PORT).orElse(merged.asInt(CONFIG_DB_PORT));
-        this.dbHost = changes.asStringOpt(CONFIG_DB_HOST).orElse(merged.asString(CONFIG_DB_HOST));
-        this.dbOpts = changes.asStringOpt(CONFIG_DB_OPTIONS).orElse(merged.asString(CONFIG_DB_OPTIONS));
-        if (changes.containsKey(CONFIG_DB_PORT)) {
-            createOrUpdateDs(this.dbHost, changes.asInt(CONFIG_DB_PORT), this.dbName, this.dbUser, this.dbPass, this.dbOpts);
-        }
+        this.dbName = merged.asString(CONFIG_DB_NAME);
+        this.dbUser = merged.asString(CONFIG_DB_USER);
+        this.dbPass = merged.asString(CONFIG_DB_PASS);
+        this.dbPort = merged.asInt(CONFIG_DB_PORT);
+        this.dbHost = merged.asString(CONFIG_DB_HOST);
+        this.dbOpts = merged.asString(CONFIG_DB_OPTIONS);
     }
 
     @Override

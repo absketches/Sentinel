@@ -15,11 +15,7 @@ import org.nanonative.nano.services.http.model.HttpObject;
 
 import java.util.Map;
 
-import static org.ab.sentinel.service.PostgreSqlService.CONFIG_DB_HOST;
-import static org.ab.sentinel.service.PostgreSqlService.CONFIG_DB_PASS;
-import static org.ab.sentinel.service.PostgreSqlService.CONFIG_DB_PORT;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.nanonative.nano.core.model.Context.EVENT_CONFIG_CHANGE;
 import static org.nanonative.nano.services.http.HttpServer.EVENT_HTTP_REQUEST;
 
 class UserControllerTest {
@@ -35,14 +31,7 @@ class UserControllerTest {
 
     @Test
     void registerUser() {
-        final Nano nano = new Nano(Map.of("app_profiles", "dev"), new HttpServer(), new PostgreSqlService(), new GithubIntegrationService(), new HttpClient(), new AppService());
-
-        nano.context().newEvent(EVENT_CONFIG_CHANGE, () -> Map.of(
-            CONFIG_DB_HOST, dbProp.dbHost(),
-            CONFIG_DB_PORT, dbProp.dbPort(),
-            // TODO: Remove the below line as password is already mentioned in dev properties file and this is a work around
-            CONFIG_DB_PASS, dbProp.dbPass()
-        )).broadcast(true).send();
+        final Nano nano = new Nano(Map.of("app_profiles", "dev", "pg_db_port", dbProp.dbPort()), new HttpServer(), new PostgreSqlService(), new GithubIntegrationService(), new HttpClient(), new AppService());
 
         nano.subscribeEvent(EVENT_HTTP_REQUEST, UserController::registerUser);
 
@@ -59,15 +48,9 @@ class UserControllerTest {
 
     @Test
     void getApps() {
-        final Nano nano = new Nano(Map.of("app_profiles", "dev"), new HttpServer(), new PostgreSqlService(), new GithubIntegrationService(), new HttpClient(), new AppService());
+        final Nano nano = new Nano(Map.of("app_profiles", "dev", "pg_db_port", dbProp.dbPort()), new HttpServer(), new PostgreSqlService(), new GithubIntegrationService(), new HttpClient(), new AppService());
 
-        nano.context(UserControllerTest.class).newEvent(EVENT_CONFIG_CHANGE, () -> Map.of(
-            CONFIG_DB_HOST, dbProp.dbHost(),
-            CONFIG_DB_PORT, dbProp.dbPort()
-        )).send();
-
-        nano.context(AppController.class)
-            .subscribeEvent(EVENT_HTTP_REQUEST, AppController::getApps);
+        nano.subscribeEvent(EVENT_HTTP_REQUEST, AppController::getApps);
 
         final HttpObject result = new HttpObject()
             .methodType(HttpMethod.GET)
